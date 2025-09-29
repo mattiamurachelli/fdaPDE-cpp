@@ -278,7 +278,7 @@ class fe_ls_parabolic_mono {
         // parse formula, extract response vector and design matrix
         Formula formula_(formula);
         std::vector<std::string> covs;
-        for (const std::string& token : formula_.rhs()) {
+        for (const std::string& token : formula_.covs()) {
             if (gf.contains(token)) { covs.push_back(token); }
         }
 	bool require_woodbury_realloc = std::cmp_not_equal(n_covs_, covs.size());
@@ -413,7 +413,7 @@ class fe_ls_parabolic_mono {
     // hutchinson approximation for Tr[S]
     double edf(int r = 100, int seed = random_seed) {
         fdapde_assert(lambda_saved_.has_value());
-        if (!Ys_.has_value() || !Bs_.has_value()) {
+        if (!Ys_.has_value() || !Bs_.has_value() || r != Us_->rows()) {   // force reconstruction if r differs from old
             int seed_ = (seed == random_seed) ? std::random_device()() : seed;
             std::mt19937 rng(seed_);
             rademacher_distribution rademacher;
@@ -422,16 +422,16 @@ class fe_ls_parabolic_mono {
                 for (int j = 0; j < r; ++j) { Us_->operator()(i, j) = rademacher(rng); }
             }
             Ys_ = Us_->transpose() * Psi_;
-            Bs_ = matrix_t::Zero(2 * n_dofs_, r);   // implicitly enforce homogeneous forcing
+            Bs_ = matrix_t::Zero(2 * m_ * n_dofs_, r);   // implicitly enforce homogeneous forcing
         }
         if (n_covs_ == 0) {
-            Bs_->topRows(n_dofs_) = -PsiNA().transpose() * D_ * W_ * (*Us_);
+            Bs_->topRows(m_ * n_dofs_) = -PsiNA().transpose() * D_ * W_ * (*Us_);
         } else {
-            Bs_->topRows(n_dofs_) = -PsiNA().transpose() * D_ * internals::lmbQ(W_, X_, invXtWX_, *Us_);
+            Bs_->topRows(m_ * n_dofs_) = -PsiNA().transpose() * D_ * internals::lmbQ(W_, X_, invXtWX_, *Us_);
         }
         matrix_t x = n_covs_ == 0 ? invA_.solve(*Bs_) : woodbury_system_solve(invA_, U_, XtWX_, V_, *Bs_);
         double trS = 0;   // monte carlo Tr[S] approximation
-        for (int i = 0; i < r; ++i) { trS += Ys_->row(i).dot(x.col(i).head(n_dofs_)); }
+        for (int i = 0; i < r; ++i) { trS += Ys_->row(i).dot(x.col(i).head(m_ * n_dofs_)); }
         return trS / r;
     }
     template <typename... LambdaT>
